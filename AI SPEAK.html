@@ -1,0 +1,180 @@
+<div id="ai-character-widget" style="position: relative; width: 100%; max-width: 1920px; aspect-ratio: 16 / 9; margin: 0 auto; text-align: center; font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.2); background-color: #000;">
+    
+    <!-- 1. 背景層 -->
+    <div style="position: relative; width: 100%; height: 100%; background-image: url('https://res.cloudinary.com/c05zlkva/image/upload/v1792288693/%E8%83%8C%E6%99%AF1.png'); background-size: 100% 100%; background-position: center; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; box-sizing: border-box;">
+        
+        <!-- 2. IP 角色圖片/動畫層 -->
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1;">
+            <img id="char-img" src="https://res.cloudinary.com/c05zlkva/image/upload/v1792288693/%E4%B8%BB%E8%A7%921.png" alt="IP角色" style="width: 100%; height: 100%; object-fit: contain;">
+        </div>
+
+        <!-- 3. 對話框圖片層 -->
+        <div id="chat-bubble-container" style="position: absolute; bottom: 0%; width: 85%; height: 100%; background-image: url('https://res.cloudinary.com/c05zlkva/image/upload/v1792289240/%E5%B0%8D%E8%A9%B1%E6%A1%86.png'); background-size: 100% 100%; background-repeat: no-repeat; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 30% 8% 3% 8%; z-index: 3;">
+            
+            <!-- 對話文字內容 -->
+            <div id="chat-text" style="font-size: 2vw; font-weight: 500; color: #333; line-height: 1.5; text-align: center; margin-top: 2%; max-width: 90%; word-break: break-all;">
+                感受到 了嗎？這是命運的召喚！點擊按鈕與本大人花花對話吧！
+            </div>
+
+            <!-- 互動控制按鈕 -->
+            <div style="margin-top: 3%;">
+                <button id="talk-btn" onclick="startInteraction()" style="background-color: #0b0706; color: white; border: none; padding: 0.8vw 2.5vw; font-size: 1.2vw; font-weight: bold; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: 0.2s;">
+                    點擊與我對話
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+// 素材與設定
+const imgIdle = "https://res.cloudinary.com/c05zlkva/image/upload/v1792288693/%E4%B8%BB%E8%A7%921.png";
+const imgTalking = "https://res.cloudinary.com/c05zlkva/image/upload/v1792289932/AI%E5%8B%95%E7%95%AB.gif";
+const GEMINI_API_KEY = "AQ.Ab8RN6LV4quL4dDbbAGfdPnS9xk_rqMxACaexJVKyWtAVELTSQ";
+
+const charImg = document.getElementById('char-img');
+const chatText = document.getElementById('chat-text');
+const talkBtn = document.getElementById('talk-btn');
+
+// 初始化語音辨識 (STT)
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = 'zh-TW';
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        talkBtn.innerText = "聆聽中...";
+        talkBtn.style.backgroundColor = "#e91e63";
+        chatText.innerText = "本大人花花正在傾聽你的封印解鎖之語...";
+    };
+
+    recognition.onresult = async (event) => {
+        const userText = event.results[0][0].transcript;
+        chatText.innerText = `你說：${userText}`;
+        
+        // 開始進行 AI 回應
+        await processAIResponse(userText);
+    };
+
+    recognition.onerror = (event) => {
+        console.error("語音辨識錯誤:", event.error);
+        chatText.innerText = "黑暗力量干擾了傳訊！再試一次解鎖封印！";
+        resetUI();
+    };
+
+    recognition.onend = () => {};
+} else {
+    alert("您的瀏覽器不支援語音辨識，請使用 Google Chrome 瀏覽器開啓。");
+}
+
+function startInteraction() {
+    if (!recognition) return;
+    try {
+        window.speechSynthesis.cancel();
+        recognition.start();
+    } catch (e) {
+        console.log(e);
+    }
+}
+
+// 處理 AI 回應與語音合成 (TTS)
+async function processAIResponse(userText) {
+    chatText.innerText = "命運的力量正在匯聚中... ⚡";
+    talkBtn.innerText = "詠唱中...";
+    talkBtn.disabled = true;
+
+    let replyText = "";
+
+    try {
+        const systemInstruction = "你是一個熱血沸騰、充滿中二病的冒險者，名字叫花花。說話時常提到「命運的召喚」、「黑暗力量」等詞彙，語氣非常誇張激動。【絕對規則】：絕對不能複述或重複使用者說的話！你要直接針對使用者表達的事情給予獨特的見解或吐槽。請用繁體中文回答，控制在 40 字以內。";
+        
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [
+                    { role: 'user', parts: [{ text: `${systemInstruction}\n\n使用者說：${userText}` }] }
+                ]
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.candidates && data.candidates[0].content.parts[0].text) {
+            replyText = data.candidates[0].content.parts[0].text.trim();
+        } else {
+            throw new Error("API 格式異常");
+        }
+    } catch (error) {
+        console.log("使用內建花花智慧對話備用方案");
+        // 更新後的備用回覆清單（隨機抽樣）
+        const fallbacks = [
+            "你這樣罵人很不OK喔！",
+            "不要再搞怪了啦，問點正經的問題可以嗎？",
+            "我不聽，我不聽，我不聽！",
+            `你說${userText}？你以為這樣行得通？`
+        ];
+        replyText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    }
+
+    // 將 AI 回答顯示在對話框上
+    chatText.innerText = replyText;
+
+    // 呼叫可愛少女音 TTS 與動畫同步控制
+    speakTextAndAnimate(replyText);
+}
+
+// 瀏覽器內建可愛少女音 TTS 與 動畫同步控制
+function speakTextAndAnimate(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'zh-TW';
+        utterance.rate = 1.1;
+        utterance.pitch = 1.3;
+
+        const voices = window.speechSynthesis.getVoices();
+        const zhVoice = voices.find(voice => voice.lang.includes('zh') && (voice.name.includes('Female') || voice.name.includes('Mei') || voice.name.includes('Yu') || voice.name.includes('Ya')));
+        if (zhVoice) {
+            utterance.voice = zhVoice;
+        }
+
+        utterance.onstart = () => {
+            charImg.src = imgTalking;
+        };
+
+        utterance.onend = () => {
+            resetUI();
+        };
+
+        utterance.onerror = () => {
+            resetUI();
+        };
+
+        window.speechSynthesis.speak(utterance);
+    } else {
+        charImg.src = imgTalking;
+        setTimeout(() => {
+            resetUI();
+        }, 4000);
+    }
+}
+
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+    };
+}
+
+function resetUI() {
+    charImg.src = imgIdle;
+    talkBtn.innerText = "點擊與我對話";
+    talkBtn.style.backgroundColor = "#0b0706";
+    talkBtn.disabled = false;
+}
+</script>
