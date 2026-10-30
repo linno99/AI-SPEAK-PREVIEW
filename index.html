@@ -117,25 +117,47 @@ function pickVoice() {
   return vs.find(v => /zh[-_]TW/i.test(v.lang)) || vs.find(v => /zh/i.test(v.lang)) || null;
 }
 
+let audioEl = null;
+const ttsCache = new Map();
+function ttsUrl() { return CONFIG.API_ENDPOINT.replace(/\/?$/, "/") + "tts"; }
+async function fetchVoice(text) {        // 向 Worker 要晓伊的語音檔；失敗回傳 null
+  if (!CONFIG.API_ENDPOINT) return null;
+  if (ttsCache.has(text)) return ttsCache.get(text);
+  try {
+    const res = await fetch(ttsUrl(), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    if (!res.ok) return null;
+    const url = URL.createObjectURL(await res.blob());
+    ttsCache.set(text, url);
+    return url;
+  } catch (e) { return null; }
+}
+
 function stopSpeaking() {                // 打斷目前的說話
   speakToken++;
   clearInterval(typeTimer);
   synth && synth.cancel();
+  if (audioEl) { audioEl.pause(); audioEl = null; }
   chatText.classList.remove("cursor");
   setSpeaking(false);
 }
 
-function say(text) {
+async function say(text) {
+  const token = ++speakToken;
+  clearInterval(typeTimer);
+  synth && synth.cancel();
+  if (audioEl) { audioEl.pause(); audioEl = null; }
+  const voiceUrl = await fetchVoice(text);   // 先取得聲音，文字與聲音才能同步
+  if (token !== speakToken) return;          // 取音期間已被打斷
   return new Promise(resolve => {
-    const token = ++speakToken;
-    clearInterval(typeTimer);
-    synth && synth.cancel();
     chatText.textContent = "";
     chatText.classList.add("cursor");
     setSpeaking(true);
 
     const chars = Array.from(text);
-    let i = 0, typed = false, spoken = !synth;
+    let i = 0, typed = false, spoken = false;
     const finish = () => {
       if (token !== speakToken) { resolve(); return; }   // 已被打斷
       if (!(typed && spoken)) return;
@@ -151,13 +173,20 @@ function say(text) {
       if (i >= chars.length) { clearInterval(typeTimer); typed = true; finish(); }
     }, CONFIG.TYPE_SPEED);
 
-    if (synth) {
+    const useSynth = () => {                 // 備援：瀏覽器內建語音
+      if (!synth) { spoken = true; finish(); return; }
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = CONFIG.LANG; u.rate = 1.05; u.pitch = 1.5;   // 音調稍高，貼近正太感
+      u.lang = CONFIG.LANG; u.rate = 1.05; u.pitch = 1.5;
       const v = pickVoice(); if (v) u.voice = v;
       u.onend = u.onerror = () => { spoken = true; finish(); };
       synth.speak(u);
-    }
+    };
+
+    if (voiceUrl) {
+      const a = audioEl = new Audio(voiceUrl);
+      a.onended = a.onerror = () => { spoken = true; finish(); };
+      a.play().catch(() => { if (token === speakToken) { audioEl = null; useSynth(); } });
+    } else useSynth();
   });
 }
 
