@@ -199,7 +199,7 @@ const DEMO_REPLIES = [
   [/謝謝|感謝/, "不客氣～你開心，青青就開心！"],
 ];
 const demoReply = t => (DEMO_REPLIES.find(([re]) => re.test(t)) || [])[1]
-  || "青青聽到了！（離線示範中，接上 AI 後就能暢聊囉）";
+  || "你的網路好像有點斷訊唉！聽不太清楚，要不要檢查一下收訊？（離線示範中，接上 AI 後就能暢聊囉）";
 
 async function askAI(userText) {
   history.push({ role: "user", content: userText });
@@ -231,7 +231,7 @@ async function handleSend(text) {
   chatText.textContent = "青青想一想…";
   let reply;
   try { reply = await askAI(text); }
-  catch (err) { console.error(err); history.pop(); reply = "哎呀，青青剛剛有點恍神，可以再說一次嗎？"; }
+  catch (err) { console.error(err); history.pop(); reply = "不好意思，網路有點爛，訊號不好沒聽清楚 "; }
   busy = false; setBtn(CONFIG.LABEL_IDLE);
   await say(reply);                      // 說話時按鈕仍可按：按下去就會打斷並重新聆聽
 }
