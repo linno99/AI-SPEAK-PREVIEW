@@ -15,17 +15,16 @@
     position: relative; aspect-ratio: 16 / 9; container-type: inline-size; overflow: hidden;
     width: min(100vw, calc(100vh * 16 / 9), 1920px);
     background: #000 center / 100% 100% no-repeat;
-    display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   }
   #char-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
   #char-img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
   /* 對話框圖（滿版圖層，位於角色之上） */
   #chat-bubble-container {
-    position: absolute; bottom: 0; width: 100%; height: 100%; z-index: 3;
+    position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; z-index: 3;
     background: center / 100% 100% no-repeat; pointer-events: none;
   }
-  /* 文字與控制列：以舞台百分比定位，對齊對話框內側（可微調 left / top / height） */
+  /* 文字與按鈕：以舞台百分比定位，對齊對話框內側（可微調 left / top / height） */
   #chat-text {
     position: absolute; z-index: 4; left: 16.5%; right: 10%; top: 66.5%; height: 14%;
     font-size: max(13px, 2.6cqw); font-weight: 500; color: #222; line-height: 1.35; text-align: left;
@@ -38,40 +37,33 @@
     position: absolute; z-index: 4; left: 16.5%; right: 10%; top: 79.5%; height: 9%;
     display: flex; gap: .8cqw; align-items: center; justify-content: flex-end;
   }
-  #talk-btn, #send {
+  #talk-btn {
     background: #0b0706; color: #fff; border: 0; border-radius: 12px; cursor: pointer; font-weight: bold;
     padding: .8cqw 2.5cqw; font-size: max(13px, 2cqw); box-shadow: 0 4px 10px rgba(0,0,0,.3);
-    transition: .2s; white-space: nowrap;
+    transition: background .2s, transform .1s; white-space: nowrap; font-family: inherit;
   }
-  #talk-btn:active, #send:active { transform: scale(.95); }
-  #send:disabled { opacity: .5; cursor: not-allowed; }
+  #talk-btn:active { transform: scale(.95); }
+  #talk-btn:disabled { opacity: .55; cursor: wait; }
+  #talk-btn.listening { background: #d64545; animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 .9cqw rgba(214,69,69,.3); } }
+
+  /* 只有瀏覽器不支援語音辨識時才會出現的備用輸入框 */
   #msg {
     flex: 1; min-width: 0; border: 1px solid #ccc; outline: 0; border-radius: 12px;
-    padding: .8cqw 1.6cqw; font-size: max(16px, 1.8cqw); /* 16px 以上可避免 iOS 聚焦時自動放大 */
-    background: rgba(255,255,255,.95); color: #333;
+    padding: .8cqw 1.6cqw; font-size: max(16px, 1.8cqw); background: rgba(255,255,255,.95); color: #333;
   }
-  .ico { background: #fff; border: 1px solid #ccc; border-radius: 12px; cursor: pointer;
-         width: 4cqw; height: 4cqw; min-width: 30px; min-height: 30px; font-size: max(14px, 2cqw); }
-  .ico.rec { background: #e86a6a; animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(232,106,106,.3); } }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 
 <div id="ai-character-widget">
-  <!-- 2. 角色圖片 / 說話動畫層 -->
   <div id="char-layer"><img id="char-img" alt="青青" draggable="false"></div>
-
-  <!-- 3. 對話框層 -->
   <div id="chat-bubble-container"></div>
   <div id="chat-text">你好，我是青青，歡迎跟我說話喔！</div>
   <div id="controls">
-      <button id="talk-btn">點擊與我對話</button>
-      <button class="ico" id="tts" title="語音開/關" aria-label="語音開關" hidden>🔊</button>
-      <input id="msg" type="text" placeholder="跟青青說說話…" autocomplete="off" enterkeyhint="send" hidden>
-      <button class="ico" id="mic" title="語音輸入" aria-label="語音輸入" hidden>🎤</button>
-      <button id="send" hidden>送出</button>
+    <input id="msg" type="text" placeholder="輸入文字…" autocomplete="off" enterkeyhint="send" hidden>
+    <button id="talk-btn">點擊與我對話</button>
   </div>
 </div>
 
@@ -83,28 +75,34 @@ const CONFIG = {
   IMG_BG:     "https://res.cloudinary.com/c05zlkva/image/upload/v1793264253/%E8%83%8C%E6%99%AF1.png",
   IMG_BUBBLE: "https://res.cloudinary.com/c05zlkva/image/upload/v1793264208/%E5%B0%8D%E8%A9%B1%E6%A1%86-07.png",
 
-  // AI 後端網址（Cloudflare Worker，見 README.md）。留空 = 離線示範模式。
-  // ⚠️ 請勿把任何 API 金鑰寫在這個檔案裡，GitHub Pages 是公開的。
+  // AI 後端（Cloudflare Worker）。留空 = 離線示範模式。⚠️ 請勿把任何 API 金鑰寫在這個檔案裡。
   API_ENDPOINT: "https://qingqing-ai.luxurwind.workers.dev/",
 
-  GREETING: "你好，我是青青，歡迎跟我說話喔！",
+  LABEL_IDLE: "點擊與我對話",
   MAX_HISTORY: 12,
   TYPE_SPEED: 45,       // 打字速度（毫秒/字）
-  TTS_LANG: "zh-TW",
+  LANG: "zh-TW",
 };
 
 /* ===================== 初始化 ===================== */
 const $ = id => document.getElementById(id);
 const widget = $("ai-character-widget"), charImg = $("char-img"), chatText = $("chat-text"),
-      talkBtn = $("talk-btn"), msg = $("msg"), sendBtn = $("send"), micBtn = $("mic"), ttsBtn = $("tts");
+      talkBtn = $("talk-btn"), msg = $("msg");
 
 widget.style.backgroundImage = `url("${CONFIG.IMG_BG}")`;
 $("chat-bubble-container").style.backgroundImage = `url("${CONFIG.IMG_BUBBLE}")`;
 charImg.src = CONFIG.IMG_IDLE;
 new Image().src = CONFIG.IMG_SPEAK;   // 預載說話動畫
 
-let history = [], busy = false, ttsOn = true, typeTimer = null, speakToken = 0;
+let history = [], busy = false, listening = false, typeTimer = null, speakToken = 0;
 const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function setBtn(label, state) {          // state: "" | "listening" | "busy"
+  talkBtn.textContent = label;
+  talkBtn.classList.toggle("listening", state === "listening");
+  talkBtn.disabled = state === "busy";
+}
 
 /* ===================== 角色狀態 ===================== */
 function setSpeaking(on) {
@@ -119,6 +117,14 @@ function pickVoice() {
   return vs.find(v => /zh[-_]TW/i.test(v.lang)) || vs.find(v => /zh/i.test(v.lang)) || null;
 }
 
+function stopSpeaking() {                // 打斷目前的說話
+  speakToken++;
+  clearInterval(typeTimer);
+  synth && synth.cancel();
+  chatText.classList.remove("cursor");
+  setSpeaking(false);
+}
+
 function say(text) {
   return new Promise(resolve => {
     const token = ++speakToken;
@@ -129,24 +135,25 @@ function say(text) {
     setSpeaking(true);
 
     const chars = Array.from(text);
-    let i = 0, typed = false, spoken = !(ttsOn && synth);
+    let i = 0, typed = false, spoken = !synth;
     const finish = () => {
-      if (token !== speakToken || !(typed && spoken)) return;
+      if (token !== speakToken) { resolve(); return; }   // 已被打斷
+      if (!(typed && spoken)) return;
       chatText.classList.remove("cursor");
       setSpeaking(false);
       resolve();
     };
 
     typeTimer = setInterval(() => {
-      if (token !== speakToken) { clearInterval(typeTimer); return; }
+      if (token !== speakToken) { clearInterval(typeTimer); resolve(); return; }
       chatText.textContent += chars[i++];
       chatText.scrollTop = chatText.scrollHeight;
       if (i >= chars.length) { clearInterval(typeTimer); typed = true; finish(); }
     }, CONFIG.TYPE_SPEED);
 
-    if (!spoken) {
+    if (synth) {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = CONFIG.TTS_LANG; u.rate = 1.05; u.pitch = 1.5;   // 音調稍高，貼近正太感
+      u.lang = CONFIG.LANG; u.rate = 1.05; u.pitch = 1.5;   // 音調稍高，貼近正太感
       const v = pickVoice(); if (v) u.voice = v;
       u.onend = u.onerror = () => { spoken = true; finish(); };
       synth.speak(u);
@@ -189,56 +196,66 @@ async function askAI(userText) {
   } finally { clearTimeout(timer); }
 }
 
-async function handleSend() {
-  const text = msg.value.trim();
-  if (!text || busy) return;
-  busy = true; sendBtn.disabled = true; msg.value = "";
-  synth && synth.cancel();
+async function handleSend(text) {
+  busy = true; setBtn("思考中…", "busy");
   chatText.classList.remove("cursor");
   chatText.textContent = "青青想一想…";
-  try {
-    await say(await askAI(text));
-  } catch (err) {
-    console.error(err);
-    history.pop();   // 失敗的提問不留在歷史
-    await say("哎呀，青青剛剛有點恍神，可以再說一次嗎？");
-  } finally {
-    busy = false; sendBtn.disabled = false; msg.focus({ preventScroll: true });
-  }
+  let reply;
+  try { reply = await askAI(text); }
+  catch (err) { console.error(err); history.pop(); reply = "哎呀，青青剛剛有點恍神，可以再說一次嗎？"; }
+  busy = false; setBtn(CONFIG.LABEL_IDLE);
+  await say(reply);                      // 說話時按鈕仍可按：按下去就會打斷並重新聆聽
 }
 
-/* ===================== 事件 ===================== */
-sendBtn.addEventListener("click", handleSend);
-msg.addEventListener("keydown", e => {
-  if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); handleSend(); }  // 注音選字時不誤送
+/* ===================== 語音輸入：按一下錄音，說完自動辨識並回答 ===================== */
+function startListening() {
+  stopSpeaking();
+  const rec = new SR();
+  rec.lang = CONFIG.LANG; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  let finalText = "", interim = "", errCode = "";
+
+  rec.onstart = () => {
+    listening = true; setBtn("聆聽中…（再按一下結束）", "listening");
+    chatText.classList.remove("cursor"); chatText.textContent = "我在聽喔…";
+  };
+  rec.onresult = e => {
+    interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalText += t; else interim += t;
+    }
+    chatText.textContent = (finalText + interim) || "我在聽喔…";   // 即時顯示聽到的內容
+  };
+  rec.onerror = e => { errCode = e.error; };
+  rec.onend = () => {
+    listening = false; setBtn(CONFIG.LABEL_IDLE);
+    const text = (finalText || interim).trim();
+    if (text) handleSend(text);
+    else if (errCode === "not-allowed" || errCode === "service-not-allowed") say("請先允許瀏覽器使用麥克風喔！");
+    else say("我沒聽清楚，再按一次跟我說吧！");
+  };
+  try { rec.start(); } catch (_) { listening = false; setBtn(CONFIG.LABEL_IDLE); }
+  startListening.rec = rec;
+}
+
+talkBtn.addEventListener("click", () => {
+  if (busy) return;
+  if (!SR) {                             // 備用：不支援語音辨識的瀏覽器改用打字
+    const t = msg.value.trim();
+    if (t) { msg.value = ""; handleSend(t); } else msg.focus();
+    return;
+  }
+  if (listening) { startListening.rec.stop(); return; }   // 手動結束錄音 → 觸發 onend 自動回答
+  startListening();
 });
 
-ttsBtn.addEventListener("click", () => {
-  ttsOn = !ttsOn; ttsBtn.textContent = ttsOn ? "🔊" : "🔇";
-  if (!ttsOn && synth) synth.cancel();
-});
-
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (SR) {
-  const rec = new SR(); rec.lang = CONFIG.TTS_LANG; rec.interimResults = false;
-  rec.onresult = e => { msg.value = e.results[0][0].transcript; handleSend(); };
-  rec.onend = rec.onerror = () => micBtn.classList.remove("rec");
-  micBtn.addEventListener("click", () => {
-    if (busy) return;
-    synth && synth.cancel();
-    try { rec.start(); micBtn.classList.add("rec"); } catch (_) {}
+if (!SR) {
+  msg.hidden = false; talkBtn.textContent = "送出";
+  CONFIG.LABEL_IDLE = "送出"; chatText.textContent = "你好，我是青青！（此瀏覽器不支援語音輸入，請用 Chrome 或 Edge，或直接打字給我）";
+  msg.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); talkBtn.click(); }
   });
 }
-
-// 點擊「與我對話」＝使用者手勢，瀏覽器才允許播放語音
-talkBtn.addEventListener("click", async () => {
-  talkBtn.hidden = true;
-  [ttsBtn, msg, sendBtn].forEach(e => e.hidden = false);
-  micBtn.hidden = !SR;
-  synth && synth.getVoices();
-  await say(CONFIG.GREETING);
-  msg.focus({ preventScroll: true });
-});
 </script>
 </body>
 </html>
